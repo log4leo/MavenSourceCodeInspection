@@ -1,0 +1,49 @@
+## maven的插件
+
+我们知道Maven具体构建动作都是由插件执行的，maven本身只是提供一个框架，这样就提供了高度可定制化的功能，我们用maven命令执行比如mvn clean package这样的命令时maven会将package这个阶段（phase）绑定到相应的生命周期（lifecycle），再寻找项目（project）里配置的plugin，执行具体的plugin完成持续构建
+
+## maven绑定插件（plugin）
+
+maven在读取命令行之后会根据命令行参数是系统默认的phase还是其他的自定义插件(goal)来解析成task参数，继而根据这些task参数来生成插件执行列表。
+[code lang='java'] 
+
+for ( Object task : tasks ) { if ( task instanceof GoalTask ) { String pluginGoal = ( (GoalTask) task ).pluginGoal;
+
+                MojoDescriptor mojoDescriptor = mojoDescriptorCreator.getMojoDescriptor( pluginGoal, session, project );
+    
+                MojoExecution mojoExecution =
+                    new MojoExecution( mojoDescriptor, "default-cli", MojoExecution.Source.CLI );
+    
+                mojoExecutions.add( mojoExecution );
+            }
+            else if ( task instanceof LifecycleTask )
+            {
+                String lifecyclePhase = ( (LifecycleTask) task ).getLifecyclePhase();
+    
+                Map<String, List<MojoExecution>> phaseToMojoMapping =
+                    calculateLifecycleMappings( session, project, lifecyclePhase );
+    
+                for ( List<MojoExecution> mojoExecutionsFromLifecycle : phaseToMojoMapping.values() )
+                {
+                    mojoExecutions.addAll( mojoExecutionsFromLifecycle );
+                }
+            }
+            else
+            {
+                throw new IllegalStateException( "unexpected task " + task );
+            }
+        }
+    
+
+[/code] 
+代码里先判断task的类型，如果是GoalTask就说明参数是clean:clean这一种带goal的格式，这种情况可能是maven内置插件也可能是开发者自己开发的插件，这种情况下maven就会先根据插件的goal去找到具体的插件，找的方法是先从项目定义的插件里找，找不到的话再去仓库里找，这里把核心部分代码贴出来: [code lang='java']
+
+           PluginDescriptor pluginDescriptor =
+                    pluginManager.loadPlugin( plugin, request.getRepositories(), request.getRepositorySession() );
+    
+          if ( request.getPrefix().equals( pluginDescriptor.getGoalPrefix() ) )
+                {
+                    return new DefaultPluginPrefixResult( plugin );
+                }
+[/code]
+这部分比较简单，比较复杂的是
